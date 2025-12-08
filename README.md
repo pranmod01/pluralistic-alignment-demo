@@ -2,6 +2,8 @@
 
 Minimal Streamlit demo that generates religious perspectives (Hindu, Buddhist, Jain, Sikh) on worldview questions using OpenAI GPT models and stores interactions/feedback locally in SQLite.
 
+<img width="1422" height="772" alt="Screenshot 2025-12-07 at 9 03 11 PM" src="https://github.com/user-attachments/assets/6354bcaa-214b-4b48-a5bb-007577350123" />
+
 ## Setup
 
 1. Create a Python environment and install dependencies:
