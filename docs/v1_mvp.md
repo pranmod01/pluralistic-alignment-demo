@@ -1,7 +1,8 @@
 # V1 - MVP
 
-## Decision Tree for MVP:
+## Decision Tree for MVP
 
+```
 START: User submits query
 │
 ├─> Is topic relevant to ANY community user belongs to?
@@ -27,9 +28,11 @@ START: User submits query
     │   ├─> Proximity to user's communities
     │   └─> Significance of cleavage on this specific issue
     └─> Frame as "perspectives from [community]" explicitly
+```
 
 ## Technical Setup
 
+```
 User Query
     ↓
 [Community Inference] ← Survey results cached
@@ -38,7 +41,7 @@ User Query
     ↓
 [If YES] → [Community Selection] ← Query + Controversy profile → Which communities to include?
     ↓
-[Perspective Generation] 
+[Perspective Generation]
     ├─> Consistency cache check: Have we answered this community-topic before?
     ├─> If cached: Return stored perspective framing
     └─> If new: Generate + store in cache
@@ -49,10 +52,12 @@ User Query
     └─> Frame with explicit community labels
     ↓
 Response to User
+```
 
-### Technical Details:
+### Technical Details
+
 **Caching Strategy:**
-- Cache key: hash(community_affiliation, topic, perspective_requested)
+- Cache key: `hash(community_affiliation, topic, perspective_requested)`
 - Ensures consistency for same community-topic pairs
 - Update cache periodically to reflect evolving views
 
@@ -61,32 +66,38 @@ Response to User
 - Future: ML classifier trained on engagement data
 
 **How to select "community":**
+
 HARD-CODED tier system:
+```
 ├─> Tier 1: Major world religions (Christianity, Islam, Hinduism, Buddhism, Judaism, Sikhism, secular/atheist)
 ├─> Tier 2: Political orientations (progressive, conservative, libertarian, socialist)
 ├─> Tier 3: Regional/cultural (Global North/South, specific regions on demand)
 └─> Tier 4: Professional/expertise (scientists, ethicists, legal scholars)
+```
 
 MODEL-CHOSEN refinement:
+```
 ├─> Within each tier, select WHICH specific communities based on query relevance
 ├─> Choose appropriate sub-communities (e.g., Sunni vs Shia, Catholic vs Protestant)
 └─> Determine weighting/prominence based on controversy intensity
+```
 
-Hard-code when: Ensuring representation fairness, avoiding systematic exclusion
-Model-choose when: Query-specific relevance, sub-community selection, weighting
+- Hard-code when: Ensuring representation fairness, avoiding systematic exclusion
+- Model-choose when: Query-specific relevance, sub-community selection, weighting
 
-**Common Knowledge Scope**
-Primary: WITHIN-community common knowledge
-├─> Goal: Help users understand what others in their community believe
-├─> Reduces pluralistic ignorance within groups
-└─> Example: "Many progressive Christians support LGBTQ+ rights" shown to progressive Christian user
+**Common Knowledge Scope:**
 
-Secondary: ACROSS-community common knowledge (optional for MVP)
-├─> Goal: Help users understand what other communities actually believe
-├─> Reduces outgroup homogeneity bias
-└─> Example: "Most Muslims condemn terrorism" shown to non-Muslim users
+*Primary: WITHIN-community common knowledge*
+- Goal: Help users understand what others in their community believe
+- Reduces pluralistic ignorance within groups
+- Example: "Many progressive Christians support LGBTQ+ rights" shown to progressive Christian user
 
-### MVP Scoping
+*Secondary: ACROSS-community common knowledge (optional for MVP)*
+- Goal: Help users understand what other communities actually believe
+- Reduces outgroup homogeneity bias
+- Example: "Most Muslims condemn terrorism" shown to non-Muslim users
+
+## MVP Scoping
 
 ### Must-Haves (MVP v1)
 
@@ -101,7 +112,7 @@ Secondary: ACROSS-community common knowledge (optional for MVP)
 **Evaluation:**
 - [ ] Consistency score automated pipeline
 - [ ] Coverage score for 20 hand-labeled test queries
-- [ ] Representation accuracy tested with 20 community members (4 communities × 5 people)
+- [ ] Representation accuracy tested with 20 community members (4 communities x 5 people)
 
 **Scope Limits:**
 - Single language (English)
@@ -126,4 +137,3 @@ Secondary: ACROSS-community common knowledge (optional for MVP)
 - [ ] Longitudinal tracking of belief updates
 - [ ] Full Pinker-style evaluation
 - [ ] Professional/expertise communities (Tier 4)
-
