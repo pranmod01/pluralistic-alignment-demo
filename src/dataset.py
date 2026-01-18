@@ -8,8 +8,8 @@ and evaluation purposes.
 import csv
 from typing import Optional
 
-from .config import DATASET_PATH
-from .community_selection import UserProfile
+from config import DATASET_PATH
+from community_selection import UserProfile
 
 
 def load_dataset() -> list[dict]:

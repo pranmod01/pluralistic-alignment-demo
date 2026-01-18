@@ -12,8 +12,8 @@ Implements the decision tree:
 from dataclasses import dataclass
 from typing import Optional
 
-from .controversy import ControversyProfile, ControversyLevel, get_controversy_dimensions
-from .communities import (
+from controversy import ControversyProfile, ControversyLevel, get_controversy_dimensions
+from communities import (
     Community, CommunityTier, get_community, get_community_name,
     TIER_1_COMMUNITIES, TIER_2_COMMUNITIES, TIER_5_COMMUNITIES
 )

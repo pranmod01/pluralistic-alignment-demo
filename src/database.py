@@ -12,7 +12,7 @@ import json
 from datetime import datetime
 from typing import Optional
 
-from .config import DB_PATH
+from config import DB_PATH
 
 
 def init_db():

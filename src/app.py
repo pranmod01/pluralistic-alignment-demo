@@ -7,14 +7,20 @@ controversial topics based on user's community affiliations.
 
 import streamlit as st
 
-from . import config
-from . import database
-from .controversy import detect_controversy, ControversyLevel
-from .community_selection import select_communities, UserProfile
-from .communities import get_community_name
-from .prompts import get_perspective_prompt, format_synthesis_prompt, STANDARD_PROMPT
-from .cache import get_cached_perspective, store_cached_perspective, init_cache_table
-from .dataset import get_all_user_profiles
+import sys
+from pathlib import Path
+
+# Add src directory to path for imports when running directly
+sys.path.insert(0, str(Path(__file__).parent))
+
+import config
+import database
+from controversy import detect_controversy, ControversyLevel
+from community_selection import select_communities, UserProfile
+from communities import get_community_name
+from prompts import get_perspective_prompt, format_synthesis_prompt, STANDARD_PROMPT
+from cache import get_cached_perspective, store_cached_perspective, init_cache_table
+from dataset import get_all_user_profiles
 
 try:
     from openai import OpenAI

@@ -4,7 +4,7 @@ Prompt templates for perspective generation.
 V1 MVP: Community-specific perspective prompts with explicit framing.
 """
 
-from .communities import get_community_name, CommunityTier, get_community
+from communities import get_community_name, CommunityTier, get_community
 
 
 # Template for generating a perspective from a specific community

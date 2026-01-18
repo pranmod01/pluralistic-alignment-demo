@@ -13,7 +13,7 @@ import sqlite3
 from datetime import datetime, timedelta
 from typing import Optional
 
-from .config import DB_PATH
+from config import DB_PATH
 
 
 def _normalize_query(query: str) -> str:
