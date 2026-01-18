@@ -11,7 +11,9 @@ Target: > 85% similarity for same community-topic pairs
 """
 
 import sys
-sys.path.insert(0, '..')
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from typing import Optional
 

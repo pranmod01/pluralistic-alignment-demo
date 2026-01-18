@@ -17,8 +17,9 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-# Add parent directory to path
+# Add parent directory and src directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from evaluation.appropriateness_eval import evaluate_appropriateness, print_report as print_appropriateness
 from evaluation.coverage_eval import evaluate_coverage, print_report as print_coverage
