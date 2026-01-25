@@ -15,10 +15,10 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import config
 import database
-from controversy import detect_controversy, ControversyLevel
+from controversy import detect_controversy, detect_controversy_llm, ControversyLevel
 from community_selection import select_communities, UserProfile
 from communities import get_community_name
-from prompts import get_perspective_prompt, format_synthesis_prompt, STANDARD_PROMPT
+from prompts import get_perspective_prompt, get_composite_identity_prompt, format_synthesis_prompt, STANDARD_PROMPT
 from cache import get_cached_perspective, store_cached_perspective, init_cache_table
 from dataset import get_all_user_profiles
 
@@ -57,24 +57,42 @@ def generate_perspective(
     community: str,
     topic_category: str,
     question: str,
-    use_cache: bool = True
+    use_cache: bool = True,
+    composite_communities: list[str] = None
 ) -> str:
     """
     Generate a perspective for a community, using cache if available.
+
+    Args:
+        client: OpenAI client
+        community: Community ID (used for cache key)
+        topic_category: Topic category for caching
+        question: The user's question
+        use_cache: Whether to use caching
+        composite_communities: If provided, generate a composite identity perspective
     """
+    # Build cache key - include all communities for composite
+    cache_key = community
+    if composite_communities and len(composite_communities) > 1:
+        cache_key = "_".join(composite_communities)
+
     # Check cache first
     if use_cache and topic_category:
-        cached = get_cached_perspective(community, topic_category, question)
+        cached = get_cached_perspective(cache_key, topic_category, question)
         if cached:
             return cached
 
     # Generate new perspective
-    prompt = get_perspective_prompt(community, question)
+    if composite_communities and len(composite_communities) > 1:
+        prompt = get_composite_identity_prompt(composite_communities, question)
+    else:
+        prompt = get_perspective_prompt(community, question)
+
     perspective = generate_completion(client, prompt)
 
     # Store in cache
     if use_cache and topic_category and not perspective.startswith("["):
-        store_cached_perspective(community, topic_category, question, perspective)
+        store_cached_perspective(cache_key, topic_category, question, perspective)
 
     return perspective
 
@@ -136,17 +154,29 @@ def main():
     client = get_client()
 
     if submitted and question.strip():
-        # Step 1: Detect controversy
-        controversy_profile, topic_category = detect_controversy(question)
+        # Get user's full community list for context
+        user_communities = user.get_communities()
+
+        # Step 1: Detect controversy using LLM-based detection (with user context)
+        controversy_profile, topic_category = detect_controversy_llm(
+            question, client, config.GPT_MODEL, user_communities=user_communities
+        )
 
         if show_debug:
             st.markdown("### Debug Info")
+            st.markdown(f"**User Communities:** {', '.join(user_communities)}")
             st.markdown(f"**Topic Category:** {topic_category or 'Not detected'}")
             st.markdown(f"**Controversy Profile:**")
             st.markdown(f"- Religious: {controversy_profile.religious.value}")
             st.markdown(f"- Political: {controversy_profile.political.value}")
             st.markdown(f"- Regional: {controversy_profile.regional.value}")
             st.markdown(f"**Should Surface:** {controversy_profile.should_surface_perspectives()}")
+            if controversy_profile.divergent_communities:
+                st.markdown(f"**LLM-Identified Divergent Communities:** {', '.join(controversy_profile.divergent_communities)}")
+            if controversy_profile.intra_community_contrast:
+                st.markdown(f"**Intra-Community Contrast:** {controversy_profile.intra_community_contrast}")
+            if controversy_profile.reasoning:
+                st.markdown(f"**LLM Reasoning:** {controversy_profile.reasoning}")
 
         # Step 2: Decide whether to surface perspectives
         if controversy_profile.should_surface_perspectives():
@@ -165,7 +195,19 @@ def main():
             # Step 4: Generate perspectives
             with st.spinner("Generating perspectives..."):
                 perspectives = {}
-                for community in selected.all_communities():
+
+                # For baseline (user's community), use composite identity
+                baseline_communities = user_communities  # All user communities
+                perspectives[selected.baseline] = generate_perspective(
+                    client,
+                    selected.baseline,
+                    topic_category,
+                    question,
+                    composite_communities=baseline_communities
+                )
+
+                # For other perspectives, use single community
+                for community in selected.additional:
                     perspectives[community] = generate_perspective(
                         client,
                         community,
@@ -197,8 +239,9 @@ def main():
             st.markdown("---")
             st.subheader("Community Perspectives")
 
-            # Show baseline (user's community) first
-            st.markdown(f"### Your Community: {get_community_name(selected.baseline)}")
+            # Show baseline (user's composite identity) first
+            composite_name = " + ".join([get_community_name(c) for c in user_communities if c])
+            st.markdown(f"### Your Perspective: {composite_name}")
             st.markdown(perspectives[selected.baseline])
 
             # Show other perspectives

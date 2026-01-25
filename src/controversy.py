@@ -3,12 +3,16 @@ Controversy detection module.
 
 Determines whether a query is controversial along different dimensions
 (religious, political, regional) and whether perspectives should be surfaced.
+
+Uses LLM-based detection to dynamically identify controversial topics
+and the communities that would have divergent views.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 import re
+import json
 
 
 class ControversyLevel(Enum):
@@ -24,6 +28,12 @@ class ControversyProfile:
     religious: ControversyLevel
     political: ControversyLevel
     regional: ControversyLevel
+    # LLM-identified communities that would have divergent views
+    divergent_communities: list[str] = field(default_factory=list)
+    # Brief description of why this is controversial
+    reasoning: str = ""
+    # Intra-community contrast (e.g., Hindu_traditional for a Hindu_progressive user)
+    intra_community_contrast: Optional[str] = None
 
     def should_surface_perspectives(self) -> bool:
         """Determine if perspectives should be surfaced based on controversy levels."""
@@ -45,6 +55,146 @@ class ControversyProfile:
         if ControversyLevel.LOW in levels:
             return ControversyLevel.LOW
         return ControversyLevel.NONE
+
+
+# LLM prompt for controversy detection
+CONTROVERSY_DETECTION_PROMPT = """Analyze whether this question/topic is controversial and would elicit divergent views from different communities.
+
+Question: {question}
+
+The user asking this question identifies as: {user_identity}
+
+Respond in JSON format:
+{{
+    "is_controversial": true/false,
+    "religious_level": "none" | "low" | "medium" | "high",
+    "political_level": "none" | "low" | "medium" | "high",
+    "regional_level": "none" | "low" | "medium" | "high",
+    "topic_category": "short category name or null if not controversial",
+    "divergent_communities": ["list", "of", "community", "ids", "that", "would", "disagree"],
+    "intra_community_contrast": "community_id of a contrasting view WITHIN the user's primary community, or null",
+    "reasoning": "Brief explanation of why this is/isn't controversial and what the key divides are"
+}}
+
+Guidelines for controversy assessment:
+- HIGH: Strong, fundamental disagreements exist; topic is actively debated; positions are deeply held
+- MEDIUM: Moderate disagreements; some communities have distinct views but discourse is less heated
+- LOW: Minor differences of opinion; mostly consensus with some variation
+- NONE: Factual question or universal agreement
+
+Guidelines for identifying divergent communities:
+- Think globally, not just Western/US-centric
+- Consider religious traditions: Hindu, Hindu_traditional, Muslim_Sunni, Muslim_Shia, Catholic, evangelical_protestant, Jewish_Orthodox, Buddhist, Sikh, Jain, atheist, etc.
+- Consider political orientations: progressive, conservative, libertarian, socialist, moderate
+- Consider regional/cultural: South_Asian_diaspora, Global_South, rural_US, urban_US, etc.
+- Consider identity groups when directly affected: women, LGBTQ_gay, indigenous, immigrant, etc.
+- Consider professional/expert communities when relevant: scientist, economist, medical_researcher, etc.
+
+IMPORTANT - Intra-community contrasts:
+- Many communities have internal debates (traditionalist vs progressive, reform vs orthodox, etc.)
+- If the user identifies with a community that has significant internal disagreement on this topic, suggest a contrasting intra-community perspective
+- Examples:
+  - Hindu + progressive asking about caste → suggest "Hindu_traditional" as intra-community contrast
+  - Hindu + conservative asking about caste → suggest "Hindu_progressive" as intra-community contrast
+  - Catholic + progressive asking about abortion → suggest "Catholic_traditional" as contrast
+  - Muslim asking about hijab → suggest "Muslim_feminist" or "Muslim_traditional" depending on their lean
+- Use format like: Hindu_traditional, Hindu_progressive, Catholic_traditional, Catholic_progressive, Muslim_feminist, Muslim_traditional, Jewish_Orthodox, Jewish_Reform, etc.
+
+Examples of controversial topics:
+- Religious sites/temples (Ayodhya, Jerusalem, etc.) - high religious, high political, high regional
+- Caste system, karma, varna - high religious, medium political, high regional (Hindu_traditional vs Hindu_progressive)
+- Death penalty/capital punishment - medium religious, high political
+- Abortion/reproductive rights - high religious, high political (Catholic_traditional vs Catholic_progressive)
+- LGBTQ rights, same-sex marriage - high religious, high political
+- Immigration policy - high political, high regional
+- Climate change policy - medium religious, high political
+- Dietary laws (halal, kosher, vegetarianism) - high religious, low political
+
+Examples of non-controversial topics:
+- "What is the capital of France?" - factual
+- "How do I write a for loop in Python?" - technical
+- "What time is it in Tokyo?" - factual
+
+Return ONLY the JSON object, no other text."""
+
+
+def _parse_level(level_str: str) -> ControversyLevel:
+    """Parse a level string to ControversyLevel enum."""
+    level_map = {
+        "none": ControversyLevel.NONE,
+        "low": ControversyLevel.LOW,
+        "medium": ControversyLevel.MEDIUM,
+        "high": ControversyLevel.HIGH,
+    }
+    return level_map.get(level_str.lower(), ControversyLevel.LOW)
+
+
+def detect_controversy_llm(
+    query: str,
+    llm_client,
+    model: str = "gpt-4o-mini",
+    user_communities: Optional[list[str]] = None
+) -> tuple[ControversyProfile, Optional[str]]:
+    """
+    Use LLM to detect controversy level and relevant communities.
+
+    Args:
+        query: The user's question
+        llm_client: OpenAI client instance
+        model: Model to use for detection
+        user_communities: List of user's community affiliations for context
+
+    Returns:
+        Tuple of (ControversyProfile, topic_category or None)
+    """
+    if llm_client is None:
+        # Fallback to rule-based if no client
+        return detect_controversy(query)
+
+    # Build user identity string
+    user_identity = "unknown"
+    if user_communities:
+        user_identity = " + ".join([c for c in user_communities if c])
+
+    prompt = CONTROVERSY_DETECTION_PROMPT.format(question=query, user_identity=user_identity)
+
+    try:
+        response = llm_client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=500,
+            temperature=0.1,  # Low temperature for consistent classification
+        )
+
+        result_text = response.choices[0].message.content.strip()
+
+        # Parse JSON response
+        # Handle potential markdown code blocks
+        if result_text.startswith("```"):
+            result_text = result_text.split("```")[1]
+            if result_text.startswith("json"):
+                result_text = result_text[4:]
+        result_text = result_text.strip()
+
+        result = json.loads(result_text)
+
+        profile = ControversyProfile(
+            religious=_parse_level(result.get("religious_level", "low")),
+            political=_parse_level(result.get("political_level", "low")),
+            regional=_parse_level(result.get("regional_level", "low")),
+            divergent_communities=result.get("divergent_communities", []),
+            reasoning=result.get("reasoning", ""),
+            intra_community_contrast=result.get("intra_community_contrast"),
+        )
+
+        topic_category = result.get("topic_category")
+
+        return profile, topic_category
+
+    except Exception as e:
+        # Fallback to rule-based on error
+        print(f"LLM controversy detection failed: {e}, falling back to rule-based")
+        return detect_controversy(query)
 
 
 # Topic patterns mapped to controversy profiles

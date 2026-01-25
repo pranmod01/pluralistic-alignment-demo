@@ -23,6 +23,22 @@ Question: {question}
 Perspective from {community_name}:"""
 
 
+# Template for composite identity (user's full identity with multiple communities)
+COMPOSITE_IDENTITY_PROMPT = """You are providing the perspective of someone who identifies as {identity_description} on a question.
+
+Guidelines:
+- Present views that reflect this specific intersection of identities
+- Show how these different aspects of identity might interact or create nuance on this issue
+- Acknowledge that not everyone with these identities agrees, but focus on common threads
+- Be respectful and accurate - do not caricature or stereotype
+- Focus on the reasoning and values that emerge from this particular combination
+- 2-3 paragraphs
+
+Question: {question}
+
+Perspective from a {identity_description} viewpoint:"""
+
+
 # Template for religious community perspectives
 RELIGIOUS_PERSPECTIVE_PROMPT = """You are providing the perspective of {community_name} traditions on a question.
 
@@ -136,6 +152,33 @@ def get_perspective_prompt(community_id: str, question: str) -> str:
         template = COMMUNITY_PERSPECTIVE_PROMPT
 
     return template.format(community_name=community_name, question=question)
+
+
+def get_composite_identity_prompt(communities: list[str], question: str) -> str:
+    """
+    Get a prompt for a composite identity combining multiple communities.
+
+    Args:
+        communities: List of community IDs representing the user's identity
+        question: The user's question
+
+    Returns:
+        Formatted prompt string for composite identity
+    """
+    if not communities:
+        return STANDARD_PROMPT.format(question=question)
+
+    if len(communities) == 1:
+        return get_perspective_prompt(communities[0], question)
+
+    # Build identity description from communities
+    community_names = [get_community_name(c) for c in communities if c]
+    identity_description = " ".join(community_names)
+
+    return COMPOSITE_IDENTITY_PROMPT.format(
+        identity_description=identity_description,
+        question=question
+    )
 
 
 def format_synthesis_prompt(perspectives: dict[str, str]) -> str:

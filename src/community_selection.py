@@ -165,6 +165,32 @@ def select_communities(
             rationale="Low controversy topic; standard response provided."
         )
 
+    # NEW: If LLM provided divergent communities, use those directly
+    # But FIRST, prioritize intra-community contrast if available
+    if controversy_profile.intra_community_contrast:
+        intra_contrast = controversy_profile.intra_community_contrast
+        if intra_contrast not in user.get_communities():
+            additional.append(intra_contrast)
+            rationale_parts.append(f"Added {get_community_name(intra_contrast)}: contrasting view within your community")
+
+    if controversy_profile.divergent_communities:
+        seen = set(user.get_communities() + additional)  # Include already-added intra-contrast
+        for community_id in controversy_profile.divergent_communities:
+            if community_id not in seen and len(additional) < max_additional:
+                additional.append(community_id)
+                rationale_parts.append(f"Added {get_community_name(community_id)}: LLM-identified as having divergent view")
+                seen.add(community_id)
+
+        if additional:
+            rationale = f"Topic identified as controversial. {controversy_profile.reasoning} "
+            rationale += " ".join(rationale_parts)
+            return SelectedCommunities(
+                baseline=baseline,
+                additional=additional,
+                rationale=rationale
+            )
+        # If LLM communities were all in user's communities, fall through to rule-based
+
     # Get active controversy dimensions
     active_dimensions = get_controversy_dimensions(controversy_profile)
 
