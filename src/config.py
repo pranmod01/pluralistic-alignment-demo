@@ -3,13 +3,14 @@ Configuration for Pluralistic Alignment Demo v1 MVP.
 """
 
 import os
+import streamlit as st
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
 
-# Read OpenAI API key from environment variable
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+# Read OpenAI API key from Streamlit secrets
+OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 
 # Base directory for the project
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
