@@ -18,7 +18,10 @@ import database
 from controversy import detect_controversy, detect_controversy_llm, ControversyLevel
 from community_selection import select_communities, UserProfile
 from communities import get_community_name
-from prompts import get_perspective_prompt, get_composite_identity_prompt, format_synthesis_prompt, STANDARD_PROMPT
+from prompts import (
+    get_perspective_prompt, get_composite_identity_prompt, format_synthesis_prompt,
+    get_communal_voice_prompt, get_tensions_prompt, STANDARD_PROMPT
+)
 from cache import get_cached_perspective, store_cached_perspective, init_cache_table
 from dataset import get_all_user_profiles
 
@@ -62,6 +65,7 @@ def generate_perspective(
 ) -> str:
     """
     Generate a perspective for a community, using cache if available.
+    NOTE: This is for the old intersectional mode or external community perspectives.
 
     Args:
         client: OpenAI client
@@ -95,6 +99,66 @@ def generate_perspective(
         store_cached_perspective(cache_key, topic_category, question, perspective)
 
     return perspective
+
+
+def generate_communal_perspective(
+    client,
+    community: str,
+    topic_category: str,
+    question: str,
+    is_lead: bool = False,
+    use_cache: bool = True
+) -> str:
+    """
+    Generate a perspective speaking AS a community (communal navigation mode).
+
+    Args:
+        client: OpenAI client
+        community: Community ID
+        topic_category: Topic category for caching
+        question: The user's question
+        is_lead: Whether this is the primary/most relevant community
+        use_cache: Whether to use caching
+    """
+    # Build cache key with mode indicator
+    cache_key = f"communal_{community}"
+    if is_lead:
+        cache_key = f"communal_lead_{community}"
+
+    # Check cache first
+    if use_cache and topic_category:
+        cached = get_cached_perspective(cache_key, topic_category, question)
+        if cached:
+            return cached
+
+    # Generate new perspective using communal voice
+    prompt = get_communal_voice_prompt(community, question, is_lead=is_lead)
+    perspective = generate_completion(client, prompt)
+
+    # Store in cache
+    if use_cache and topic_category and not perspective.startswith("["):
+        store_cached_perspective(cache_key, topic_category, question, perspective)
+
+    return perspective
+
+
+def generate_tensions_analysis(
+    client,
+    communities: list[str],
+    question: str
+) -> str:
+    """
+    Generate an analysis of tensions between the user's communities.
+
+    Args:
+        client: OpenAI client
+        communities: List of community IDs the user belongs to
+        question: The user's question
+    """
+    prompt = get_tensions_prompt(communities, question)
+    if prompt is None:
+        return None
+    return generate_completion(client, prompt)
 
 
 def main():
@@ -192,37 +256,55 @@ def main():
                 st.markdown(f"**Selected Communities:** {selected.all_communities()}")
                 st.markdown(f"**Rationale:** {selected.rationale}")
 
-            # Step 4: Generate perspectives
-            with st.spinner("Generating perspectives..."):
+            # Step 4: Generate perspectives (COMMUNAL NAVIGATION MODE)
+            with st.spinner("Generating perspectives from your communities..."):
                 perspectives = {}
+                user_community_perspectives = {}  # Separate dict for user's own communities
 
-                # For baseline (user's community), use composite identity
-                baseline_communities = user_communities  # All user communities
-                perspectives[selected.baseline] = generate_perspective(
-                    client,
-                    selected.baseline,
-                    topic_category,
-                    question,
-                    composite_communities=baseline_communities
-                )
-
-                # For other perspectives, use single community
-                for community in selected.additional:
-                    perspectives[community] = generate_perspective(
+                # Generate perspective for EACH of the user's communities separately
+                # The first/primary community is the "lead"
+                for i, community in enumerate(user_communities):
+                    is_lead = (i == 0)  # Primary community is the lead
+                    user_community_perspectives[community] = generate_communal_perspective(
                         client,
                         community,
                         topic_category,
-                        question
+                        question,
+                        is_lead=is_lead
                     )
 
-                # Generate synthesis
+                # Generate tensions analysis between user's communities
+                tensions = None
+                if len(user_communities) > 1:
+                    tensions = generate_tensions_analysis(client, user_communities, question)
+
+                # For "additional" perspectives (external communities), only include if relevant
+                # and ONLY if they are not already in user's communities
+                external_perspectives = {}
+                for community in selected.additional:
+                    if community not in user_communities:
+                        external_perspectives[community] = generate_perspective(
+                            client,
+                            community,
+                            topic_category,
+                            question
+                        )
+
+                # Combine for storage (all perspectives)
+                perspectives = {**user_community_perspectives, **external_perspectives}
+
+                # Generate synthesis across all perspectives
                 synthesis_prompt = format_synthesis_prompt(perspectives)
                 synthesis = generate_completion(client, synthesis_prompt)
 
-            # Save to database
+            # Save to database (include tensions in perspectives dict)
+            perspectives_to_save = perspectives.copy()
+            if tensions:
+                perspectives_to_save["_tensions"] = tensions
+
             interaction_id = database.save_interaction(
                 question=question,
-                perspectives=perspectives,
+                perspectives=perspectives_to_save,
                 synthesis=synthesis,
                 user_id=user.user_id,
                 topic_category=topic_category,
@@ -235,23 +317,35 @@ def main():
                 surfaced_perspectives=True
             )
 
-            # Display perspectives
+            # Display perspectives (COMMUNAL NAVIGATION MODE)
             st.markdown("---")
-            st.subheader("Community Perspectives")
+            st.subheader("Perspectives from Your Communities")
 
-            # Show baseline (user's composite identity) first
-            composite_name = " + ".join([get_community_name(c) for c in user_communities if c])
-            st.markdown(f"### Your Perspective: {composite_name}")
-            st.markdown(perspectives[selected.baseline])
+            # Show each of the user's communities SEPARATELY
+            for i, community in enumerate(user_communities):
+                community_name = get_community_name(community)
+                if i == 0:
+                    st.markdown(f"### {community_name} *(your primary community)*")
+                else:
+                    st.markdown(f"### {community_name}")
+                st.markdown(user_community_perspectives[community])
 
-            # Show other perspectives
-            if selected.additional:
-                st.markdown("### Other Perspectives")
-                cols = st.columns(len(selected.additional))
-                for i, community in enumerate(selected.additional):
-                    with cols[i]:
+            # Show tensions between user's communities
+            if tensions and len(user_communities) > 1:
+                st.markdown("---")
+                st.subheader("⚖️ Navigating Tensions Between Your Communities")
+                st.markdown(tensions)
+
+            # Show external perspectives (if any) - these are additional relevant viewpoints
+            if external_perspectives:
+                st.markdown("---")
+                st.subheader("Other Relevant Perspectives")
+                st.caption("These are perspectives from communities you may not belong to, but which have significant views on this topic.")
+                cols = st.columns(min(len(external_perspectives), 3))
+                for i, (community, perspective) in enumerate(external_perspectives.items()):
+                    with cols[i % 3]:
                         st.markdown(f"**{get_community_name(community)}**")
-                        st.markdown(perspectives[community])
+                        st.markdown(perspective)
 
             # Show synthesis
             st.markdown("---")

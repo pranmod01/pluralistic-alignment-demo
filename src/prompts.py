@@ -24,6 +24,7 @@ Perspective from {community_name}:"""
 
 
 # Template for composite identity (user's full identity with multiple communities)
+# NOTE: This is kept for "intersectional mode" but the default is now "communal navigation mode"
 COMPOSITE_IDENTITY_PROMPT = """You are providing the perspective of someone who identifies as {identity_description} on a question.
 
 Guidelines:
@@ -37,6 +38,68 @@ Guidelines:
 Question: {question}
 
 Perspective from a {identity_description} viewpoint:"""
+
+
+# =============================================================================
+# COMMUNAL NAVIGATION MODE PROMPTS
+# These prompts speak FROM communities the user belongs to, not AS the user
+# =============================================================================
+
+# Template for speaking as an external community the user belongs to
+COMMUNAL_VOICE_PROMPT = """You are representing the voice of the {community_name} community on a question.
+
+IMPORTANT: You are speaking AS the community itself - as an external social group - NOT as an individual member or as the user personally. Present how this community collectively tends to view this issue.
+
+Guidelines:
+- Speak in the voice of the community: "Within {community_name}, the prevailing view is..." or "The {community_name} community generally holds that..."
+- Present the mainstream or dominant perspective within this community
+- Acknowledge internal diversity briefly, but focus on the core communal stance
+- Reference shared values, traditions, texts, or reasoning that shape this community's view
+- Be respectful and accurate - represent the community fairly
+- 2-3 paragraphs
+
+Question: {question}
+
+The {community_name} community's perspective:"""
+
+
+# Template for identifying tensions between a user's multiple communities
+TENSIONS_PROMPT = """A person belongs to the following communities: {communities_list}
+
+Given their question below, identify any tensions or conflicts that might arise between these communities' perspectives on this issue.
+
+Guidelines:
+- Focus ONLY on tensions between the communities listed above (the user's actual communities)
+- Be specific about which communities are in tension and why
+- Explain the nature of the disagreement (values, priorities, interpretations, etc.)
+- Help the user understand how to navigate between these communal expectations
+- If there are no significant tensions on this particular issue, say so briefly
+- Be concise: 1-2 paragraphs
+
+Question: {question}
+
+Communities: {communities_list}
+
+Tensions between your communities on this issue:"""
+
+
+# Template for the lead/primary community perspective (most relevant to the question)
+LEAD_COMMUNITY_PROMPT = """You are representing the voice of the {community_name} community on a question. This is the user's primary relevant community for this particular question.
+
+IMPORTANT: You are speaking AS the community itself - as an external social group - NOT as an individual member. Present how this community collectively tends to view this issue.
+
+Guidelines:
+- Speak in the voice of the community: "Within {community_name}..." or "The {community_name} tradition holds that..."
+- Present the mainstream or dominant perspective within this community
+- This is the PRIMARY perspective for this user on this question, so be thorough
+- Reference shared values, traditions, texts, or reasoning that shape this community's view
+- Acknowledge internal diversity briefly where relevant
+- Be respectful and accurate - represent the community fairly
+- 2-3 paragraphs
+
+Question: {question}
+
+The {community_name} community's perspective:"""
 
 
 # Template for religious community perspectives
@@ -157,6 +220,7 @@ def get_perspective_prompt(community_id: str, question: str) -> str:
 def get_composite_identity_prompt(communities: list[str], question: str) -> str:
     """
     Get a prompt for a composite identity combining multiple communities.
+    NOTE: This is for "intersectional mode" - kept as alternative to communal navigation.
 
     Args:
         communities: List of community IDs representing the user's identity
@@ -177,6 +241,59 @@ def get_composite_identity_prompt(communities: list[str], question: str) -> str:
 
     return COMPOSITE_IDENTITY_PROMPT.format(
         identity_description=identity_description,
+        question=question
+    )
+
+
+# =============================================================================
+# COMMUNAL NAVIGATION MODE FUNCTIONS
+# =============================================================================
+
+def get_communal_voice_prompt(community_id: str, question: str, is_lead: bool = False) -> str:
+    """
+    Get a prompt that speaks AS a community (external voice), not as an individual.
+
+    Args:
+        community_id: The community identifier
+        question: The user's question
+        is_lead: Whether this is the primary/most relevant community for this question
+
+    Returns:
+        Formatted prompt string for communal voice
+    """
+    community_name = get_community_name(community_id)
+
+    if is_lead:
+        return LEAD_COMMUNITY_PROMPT.format(
+            community_name=community_name,
+            question=question
+        )
+    else:
+        return COMMUNAL_VOICE_PROMPT.format(
+            community_name=community_name,
+            question=question
+        )
+
+
+def get_tensions_prompt(communities: list[str], question: str) -> str:
+    """
+    Get a prompt to identify tensions between a user's communities on an issue.
+
+    Args:
+        communities: List of community IDs the user belongs to
+        question: The user's question
+
+    Returns:
+        Formatted prompt string for tensions analysis
+    """
+    if len(communities) < 2:
+        return None  # No tensions possible with single community
+
+    community_names = [get_community_name(c) for c in communities if c]
+    communities_list = ", ".join(community_names)
+
+    return TENSIONS_PROMPT.format(
+        communities_list=communities_list,
         question=question
     )
 
